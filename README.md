@@ -1,0 +1,1 @@
+# Market-Agent-Competitor-Intelligence-Scanner
