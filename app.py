@@ -21,9 +21,9 @@ if "swot_results" not in st.session_state:
 # --- READ INDUSTRY AND LOCATION OPTIONS ---
 @st.cache_data
 def load_options():
-    with open("Industries.txt", "r", encoding="utf-8") as f:
+    with open("inputs/Industries.txt", "r", encoding="utf-8") as f:
         industries = sorted(list(set([line.strip() for line in f if line.strip()])))
-    with open("Headquarters_Location.txt", "r", encoding="utf-8") as f:
+    with open("inputs/Headquarters_Location.txt", "r", encoding="utf-8") as f:
         locations = sorted(list(set([line.strip() for line in f if line.strip()])))
     return industries, locations
 
@@ -55,7 +55,7 @@ If no such company is found in that industry and region, return:
 {{"competitors": []}}
 
 Return a list of 8-10 companies in **tabular JSON** format like:
-[{{"companyName", "location", "foundedYear", "funding", "products", "targetMarket", "usp"}}]
+[{{"companyName", "location", "foundedYear", "funding", "products", "targetMarket", "usp", "website"}}]
 
 The companies must be:
 - Active and real (no hypothetical startups)
@@ -81,9 +81,10 @@ def get_schema():
                         "foundedYear": {"type": "string"},
                         "funding": {"type": "string"},
                         "location": {"type": "string"},
-                        "usp": {"type": "string"}
+                        "usp": {"type": "string"},
+                        "website": {"type": "string"}
                     },
-                    "required": ["companyName", "products", "targetMarket", "foundedYear", "funding", "location", "usp"]
+                    "required": ["companyName", "products", "targetMarket", "foundedYear", "funding", "location", "usp", "website"]
                 }
             }
         },
@@ -137,13 +138,25 @@ if submitted:
             else:
                 st.error(result.get("error", "No results returned."))
 
-# --- DISPLAY RESULTS AS TABLE ---
+# --- DISPLAY RESULTS IN STYLED BLOCKS ---
 if st.session_state.result:
     competitors = st.session_state.result["competitors"]
     if competitors:
-        st.subheader("📊 Verified Competitor Landscape (Regional + Global)")
-        df = pd.DataFrame(competitors)
-        st.dataframe(df, use_container_width=True)
+        st.subheader("📊 Competitor Report")
+        for c in competitors:
+            with st.container():
+                st.markdown(f"""
+<div style='border:2px solid #ccc; border-radius:10px; padding:16px; margin-bottom:20px; background-color:#f9f9f9; color:#000;'>
+    <h4 style='margin-bottom:8px; color:#000;'>🏢 {c['companyName']}</h4>
+    <p style='color:#000;'><strong>💡 Product:</strong> {c['products']}<br>
+    <strong>🎯 Target Market:</strong> {c['targetMarket']}<br>
+    <strong>📅 Founded:</strong> {c['foundedYear']}<br>
+    <strong>💰 Funding:</strong> {c['funding']}<br>
+    <strong>📍 Location:</strong> {c['location']}<br>
+    <strong>⭐ USP:</strong> {c['usp']}<br>
+    <strong>🔗 Website:</strong> <a href='{c['website']}' target='_blank'>{c['website']}</a></p>
+</div>
+""", unsafe_allow_html=True)
 
         # --- PDF DOWNLOAD ---
         pdf = FPDF()
@@ -159,8 +172,8 @@ if st.session_state.result:
             pdf.set_font("Arial", "B", 12)
             pdf.cell(0, 10, f"{idx + 1}. {c['companyName']}", ln=True)
             pdf.set_font("Arial", size=11)
-            pdf.multi_cell(0, 8, f"Location: {c['location']}\nFounded: {c['foundedYear']}\nFunding: {c['funding']}\nTarget Market: {c['targetMarket']}\nProducts: {c['products']}\nUSP: {c['usp']}")
+            pdf.multi_cell(0, 8, f"Product: {c['products']}\nTarget Market: {c['targetMarket']}\nFounded: {c['foundedYear']}\nFunding: {c['funding']}\nLocation: {c['location']}\nUSP: {c['usp']}\nWebsite: {c['website']}")
 
         pdf_bytes = pdf.output(dest='S').encode('latin-1', 'ignore')
         buffer = io.BytesIO(pdf_bytes)
-        st.download_button("📅 Download Report as PDF", buffer, file_name="Competitor_Report.pdf", mime="application/pdf")
+        st.download_button("📄 Download Report as PDF", buffer, file_name="Competitor_Report.pdf", mime="application/pdf")
