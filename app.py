@@ -20,9 +20,9 @@ if "swot_results" not in st.session_state:
 # --- READ INDUSTRY AND LOCATION OPTIONS ---
 @st.cache_data
 def load_options():
-    with open("inputs/Industries.txt", "r", encoding="utf-8") as f:
+    with open("Industries.txt", "r", encoding="utf-8") as f:
         industries = sorted(list(set([line.strip() for line in f if line.strip()])))
-    with open("inputs/Headquarters_Location.txt", "r", encoding="utf-8") as f:
+    with open("Headquarters_Location.txt", "r", encoding="utf-8") as f:
         locations = sorted(list(set([line.strip() for line in f if line.strip()])))
     return industries, locations
 
