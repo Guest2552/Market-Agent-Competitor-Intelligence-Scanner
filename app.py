@@ -5,7 +5,7 @@ import io
 from fpdf import FPDF
 
 # --- CONFIGURE GEMINI ---
-genai.configure(api_key="YOUR_GEMINI_API_KEY")  # Replace with your Gemini API key
+genai.configure(api_key="AIzaSyAL0yuyhQZBuCxEsTL5lg8VXr567w4kKwg")  # Replace with your Gemini API key
 
 # --- PAGE SETTINGS ---
 st.set_page_config(page_title="AI Competitor Scanner", layout="centered")
@@ -14,15 +14,26 @@ st.title("🤖 Market Agent – Competitor Intelligence Scanner")
 # --- SESSION STATE INIT ---
 if "result" not in st.session_state:
     st.session_state.result = None
-
 if "swot_results" not in st.session_state:
     st.session_state.swot_results = {}
 
+# --- READ INDUSTRY AND LOCATION OPTIONS ---
+@st.cache_data
+def load_options():
+    with open("inputs/Industries.txt", "r", encoding="utf-8") as f:
+        industries = sorted(list(set([line.strip() for line in f if line.strip()])))
+    with open("inputs/Headquarters_Location.txt", "r", encoding="utf-8") as f:
+        locations = sorted(list(set([line.strip() for line in f if line.strip()])))
+    return industries, locations
+
+industry_options, location_options = load_options()
+
 # --- INPUT FORM ---
 with st.form("input_form"):
-    industry = st.text_input("Industry*", value=st.session_state.get("industry", ""), placeholder="e.g., AI in Education")
+    product = st.text_input("Product / Idea*", value=st.session_state.get("product", ""), placeholder="e.g., AI-powered learning assistant")
+    industry = st.selectbox("Industry*", industry_options, index=industry_options.index(st.session_state.get("industry", industry_options[0])) if "industry" in st.session_state else 0)
     keywords = st.text_input("Keywords*", value=st.session_state.get("keywords", ""), placeholder="e.g., EdTech, Learning Tools")
-    region = st.text_input("Region*", value=st.session_state.get("region", ""), placeholder="e.g., India")
+    region = st.selectbox("Region*", location_options, index=location_options.index(st.session_state.get("region", location_options[0])) if "region" in st.session_state else 0)
 
     company_size = st.selectbox("Company Size", ["Any", "Startup (1–50 employees)", "Mid-size (51–500 employees)", "Enterprise (500+ employees)"])
     funding_stage = st.selectbox("Funding Stage", ["Any", "Seed Stage", "Growth Stage (Series A, B, C)", "Late Stage (Series D+)"])
@@ -34,7 +45,7 @@ with st.form("input_form"):
 
 # --- PROMPT CREATION ---
 def build_prompt(data):
-    return f"""Analyze the competitive landscape for '{data['industry']}' in '{data['region']}' with keywords '{data['keywords']}'.
+    return f"""Analyze the competitive landscape for the product/idea '{data['product']}' in the context of the industry '{data['industry']}' and region '{data['region']}', using keywords '{data['keywords']}'.
 Company Size: {data['companySize']}
 Funding Stage: {data['fundingStage']}
 Business Model: {data['businessModel']}
@@ -123,11 +134,12 @@ def generate_swot(competitor):
 
 # --- HANDLE FORM SUBMISSION ---
 if submitted:
-    if not industry or not keywords or not region:
+    if not product or not industry or not keywords or not region:
         st.warning("Please fill in all required fields.")
     else:
         with st.spinner("Generating competitor report..."):
             user_data = {
+                "product": product,
                 "industry": industry,
                 "keywords": keywords,
                 "region": region,
@@ -142,6 +154,7 @@ if submitted:
             result = generate_report(prompt)
             if "competitors" in result:
                 st.session_state.result = result
+                st.session_state.product = product
                 st.session_state.industry = industry
                 st.session_state.keywords = keywords
                 st.session_state.region = region
@@ -207,8 +220,27 @@ if st.session_state.result:
 
             # --- ADD TO PDF ---
             pdf.add_page()
-            pdf.cell(200, 10, txt=f"Company: {company_name}", ln=True)
-            pdf.multi_cell(0, 10, f"Location: {c['location']}\nFounded: {c['foundedYear']}\nFunding: {c['funding']}\nTarget Market: {c['targetMarket']}\nProducts: {c['products']}\nUSP: {c['usp']}\n")
+            pdf.set_font("Arial", "B", 14)
+            pdf.cell(0, 10, f"Company: {company_name}", ln=True)
+
+            pdf.set_font("Arial", "B", 12)
+            pdf.cell(0, 10, "Company Overview", ln=True)
+            pdf.set_font("Arial", "", 11)
+            pdf.multi_cell(0, 8, f"Location: {c['location']}")
+            pdf.multi_cell(0, 8, f"Founded: {c['foundedYear']}")
+            pdf.multi_cell(0, 8, f"Funding: {c['funding']}")
+            pdf.multi_cell(0, 8, f"Target Market: {c['targetMarket']}")
+
+            pdf.set_font("Arial", "B", 12)
+            pdf.cell(0, 10, "Product / Service Offered", ln=True)
+            pdf.set_font("Arial", "", 11)
+            pdf.multi_cell(0, 8, f"{c['products']}")
+
+            pdf.set_font("Arial", "B", 12)
+            pdf.cell(0, 10, "Unique Selling Proposition (USP)", ln=True)
+            pdf.set_font("Arial", "", 11)
+            pdf.multi_cell(0, 8, f"{c['usp']}")
+
             pdf.set_font("Arial", "B", 12)
             pdf.cell(0, 10, "SWOT Analysis", ln=True)
             pdf.set_font("Arial", "", 11)
