@@ -2,6 +2,7 @@ import streamlit as st
 import google.generativeai as genai
 import json
 import io
+import pandas as pd
 from fpdf import FPDF
 
 # --- CONFIGURE GEMINI ---
@@ -45,14 +46,24 @@ with st.form("input_form"):
 
 # --- PROMPT CREATION ---
 def build_prompt(data):
-    return f"""Analyze the competitive landscape for the product/idea '{data['product']}' in the context of the industry '{data['industry']}' and region '{data['region']}', using keywords '{data['keywords']}'.
-Company Size: {data['companySize']}
-Funding Stage: {data['fundingStage']}
-Business Model: {data['businessModel']}
-Timeframe: {data['timeframe']}
-Focus: {data['focusAreas']}
-Return a JSON object named 'competitors' with this format:
-[{{companyName, logoPlaceholder, products, targetMarket, foundedYear, funding, location, usp}}]"""
+    return f"""
+You are a market research analyst. Your job is to provide a **list of real, existing companies**, both regional (from {data['region']}) and global, that are **actively operating in the '{data['industry']}' industry** and offer products/services related to '{data['product']}' and the keywords: {data['keywords']}.
+
+**Only include real, verifiable companies. Do not make up company names.** If you are unsure about a company, exclude it.
+
+If no such company is found in that industry and region, return:
+{{"competitors": []}}
+
+Return a list of 8-10 companies in **tabular JSON** format like:
+[{{"companyName", "location", "foundedYear", "funding", "products", "targetMarket", "usp"}}]
+
+The companies must be:
+- Active and real (no hypothetical startups)
+- From both regional ({data['region']}) and global markets
+- Competitors in the same product/service segment
+
+Be concise and factual.
+"""
 
 # --- OUTPUT SCHEMA ---
 def get_schema():
@@ -65,7 +76,6 @@ def get_schema():
                     "type": "object",
                     "properties": {
                         "companyName": {"type": "string"},
-                        "logoPlaceholder": {"type": "string"},
                         "products": {"type": "string"},
                         "targetMarket": {"type": "string"},
                         "foundedYear": {"type": "string"},
@@ -73,14 +83,14 @@ def get_schema():
                         "location": {"type": "string"},
                         "usp": {"type": "string"}
                     },
-                    "required": ["companyName", "logoPlaceholder", "products", "targetMarket", "foundedYear", "funding", "location", "usp"]
+                    "required": ["companyName", "products", "targetMarket", "foundedYear", "funding", "location", "usp"]
                 }
             }
         },
         "required": ["competitors"]
     }
 
-# --- GENERATE COMPETITOR REPORT ---
+# --- GENERATE REPORT ---
 def generate_report(prompt):
     try:
         model = genai.GenerativeModel(
@@ -94,43 +104,6 @@ def generate_report(prompt):
         return json.loads(response.text)
     except Exception as e:
         return {"error": f"AI generation failed: {str(e)}"}
-
-# --- GENERATE SWOT ---
-def generate_swot(competitor):
-    prompt = (
-        f"Generate a SWOT analysis for '{competitor['companyName']}' based on:\n"
-        f"- USP: {competitor['usp']}\n"
-        f"- Products: {competitor['products']}\n"
-        f"- Target Market: {competitor['targetMarket']}\n"
-        f"- Funding: {competitor['funding']}\n"
-        f"- Founded: {competitor['foundedYear']}\n"
-        f"- Location: {competitor['location']}\n\n"
-        "Return JSON with four lists: strengths, weaknesses, opportunities, threats."
-    )
-
-    schema = {
-        "type": "object",
-        "properties": {
-            "strengths": {"type": "array", "items": {"type": "string"}},
-            "weaknesses": {"type": "array", "items": {"type": "string"}},
-            "opportunities": {"type": "array", "items": {"type": "string"}},
-            "threats": {"type": "array", "items": {"type": "string"}}
-        },
-        "required": ["strengths", "weaknesses", "opportunities", "threats"]
-    }
-
-    try:
-        model = genai.GenerativeModel(
-            model_name="gemini-2.5-pro",
-            generation_config={
-                "response_mime_type": "application/json",
-                "response_schema": schema
-            }
-        )
-        response = model.generate_content(prompt)
-        return json.loads(response.text)
-    except Exception as e:
-        return {"error": f"SWOT generation failed: {str(e)}"}
 
 # --- HANDLE FORM SUBMISSION ---
 if submitted:
@@ -153,103 +126,41 @@ if submitted:
             prompt = build_prompt(user_data)
             result = generate_report(prompt)
             if "competitors" in result:
-                st.session_state.result = result
-                st.session_state.product = product
-                st.session_state.industry = industry
-                st.session_state.keywords = keywords
-                st.session_state.region = region
-                st.session_state.swot_results = {}
+                if not result["competitors"]:
+                    st.info(f"No real companies found in the '{industry}' industry located in '{region}' for the product '{product}'.")
+                else:
+                    st.session_state.result = result
+                    st.session_state.product = product
+                    st.session_state.industry = industry
+                    st.session_state.keywords = keywords
+                    st.session_state.region = region
             else:
                 st.error(result.get("error", "No results returned."))
 
-# --- DISPLAY RESULTS ---
+# --- DISPLAY RESULTS AS TABLE ---
 if st.session_state.result:
-    result = st.session_state.result
-    pdf = FPDF()
-    pdf.set_auto_page_break(auto=True, margin=15)
-    pdf.set_font("Arial", size=12)
+    competitors = st.session_state.result["competitors"]
+    if competitors:
+        st.subheader("📊 Verified Competitor Landscape (Regional + Global)")
+        df = pd.DataFrame(competitors)
+        st.dataframe(df, use_container_width=True)
 
-    st.subheader("📊 Competitor List")
-    for idx, c in enumerate(result["competitors"]):
-        with st.expander(c["companyName"]):
-            st.markdown(f"**📍 Location:** {c['location']}")
-            st.markdown(f"**💼 Founded:** {c['foundedYear']} | **Funding:** {c['funding']}")
-            st.markdown(f"**🎯 Target Market:** {c['targetMarket']}")
-            st.markdown(f"**🧩 Products:** {c['products']}")
-            st.markdown(f"**⭐ USP:** {c['usp']}")
+        # --- PDF DOWNLOAD ---
+        pdf = FPDF()
+        pdf.set_auto_page_break(auto=True, margin=15)
+        pdf.set_font("Arial", size=12)
+        pdf.add_page()
+        pdf.set_font("Arial", "B", 14)
+        pdf.cell(0, 10, "Competitor Intelligence Report", ln=True)
+        pdf.set_font("Arial", size=12)
 
-            if st.button(f"📊 Generate SWOT: {c['companyName']}", key=f"swot_{idx}"):
-                with st.spinner("Generating SWOT..."):
-                    swot = generate_swot(c)
-                    if "error" in swot:
-                        st.error(swot["error"])
-                    else:
-                        st.session_state.swot_results[c["companyName"]] = {"company": c, "swot": swot}
-
-    # --- DISPLAY SWOTs + ADD TO PDF ---
-    if st.session_state.swot_results:
-        st.subheader("📄 Generated SWOTs")
-
-        for company_name, data in st.session_state.swot_results.items():
-            c = data["company"]
-            swot = data["swot"]
-
-            st.markdown(f"## 🔍 {company_name}")
-            st.markdown(f"📍 **Location:** {c['location']}")
-            st.markdown(f"💼 **Founded:** {c['foundedYear']} | 💰 **Funding:** {c['funding']}")
-            st.markdown(f"🎯 **Target Market:** {c['targetMarket']}")
-            st.markdown(f"🧩 **Products:** {c['products']}")
-            st.markdown(f"⭐ **USP:** {c['usp']}")
-            st.markdown("### 🧠 SWOT Analysis")
-
-            col1, col2 = st.columns(2)
-            with col1:
-                st.markdown("**✅ Strengths**")
-                for s in swot["strengths"]:
-                    st.markdown(f"- {s}")
-                st.markdown("**⚠️ Weaknesses**")
-                for w in swot["weaknesses"]:
-                    st.markdown(f"- {w}")
-            with col2:
-                st.markdown("**📈 Opportunities**")
-                for o in swot["opportunities"]:
-                    st.markdown(f"- {o}")
-                st.markdown("**🚨 Threats**")
-                for t in swot["threats"]:
-                    st.markdown(f"- {t}")
-
-            # --- ADD TO PDF ---
-            pdf.add_page()
-            pdf.set_font("Arial", "B", 14)
-            pdf.cell(0, 10, f"Company: {company_name}", ln=True)
-
+        for idx, c in enumerate(competitors):
+            pdf.ln(10)
             pdf.set_font("Arial", "B", 12)
-            pdf.cell(0, 10, "Company Overview", ln=True)
-            pdf.set_font("Arial", "", 11)
-            pdf.multi_cell(0, 8, f"Location: {c['location']}")
-            pdf.multi_cell(0, 8, f"Founded: {c['foundedYear']}")
-            pdf.multi_cell(0, 8, f"Funding: {c['funding']}")
-            pdf.multi_cell(0, 8, f"Target Market: {c['targetMarket']}")
+            pdf.cell(0, 10, f"{idx + 1}. {c['companyName']}", ln=True)
+            pdf.set_font("Arial", size=11)
+            pdf.multi_cell(0, 8, f"Location: {c['location']}\nFounded: {c['foundedYear']}\nFunding: {c['funding']}\nTarget Market: {c['targetMarket']}\nProducts: {c['products']}\nUSP: {c['usp']}")
 
-            pdf.set_font("Arial", "B", 12)
-            pdf.cell(0, 10, "Product / Service Offered", ln=True)
-            pdf.set_font("Arial", "", 11)
-            pdf.multi_cell(0, 8, f"{c['products']}")
-
-            pdf.set_font("Arial", "B", 12)
-            pdf.cell(0, 10, "Unique Selling Proposition (USP)", ln=True)
-            pdf.set_font("Arial", "", 11)
-            pdf.multi_cell(0, 8, f"{c['usp']}")
-
-            pdf.set_font("Arial", "B", 12)
-            pdf.cell(0, 10, "SWOT Analysis", ln=True)
-            pdf.set_font("Arial", "", 11)
-            pdf.multi_cell(0, 8, f"Strengths:\n- " + "\n- ".join(swot["strengths"]))
-            pdf.multi_cell(0, 8, f"Weaknesses:\n- " + "\n- ".join(swot["weaknesses"]))
-            pdf.multi_cell(0, 8, f"Opportunities:\n- " + "\n- ".join(swot["opportunities"]))
-            pdf.multi_cell(0, 8, f"Threats:\n- " + "\n- ".join(swot["threats"]))
-
-        # --- DOWNLOAD BUTTON ---
-        pdf_bytes = pdf.output(dest='S').encode('latin-1')
+        pdf_bytes = pdf.output(dest='S').encode('latin-1', 'ignore')
         buffer = io.BytesIO(pdf_bytes)
-        st.download_button("📥 Download Full Report as PDF", buffer, file_name="Full_Competitor_Report.pdf", mime="application/pdf")
+        st.download_button("📅 Download Report as PDF", buffer, file_name="Competitor_Report.pdf", mime="application/pdf")
