@@ -6,7 +6,7 @@ import pandas as pd
 from fpdf import FPDF
 
 # --- CONFIGURE GEMINI ---
-genai.configure(api_key="AIzaSyAL0yuyhQZBuCxEsTL5lg8VXr567w4kKwg")  # Replace with your Gemini API key
+genai.configure(api_key="Your_API_KEY")  # Replace with your Gemini API key
 
 # --- PAGE SETTINGS ---
 st.set_page_config(page_title="AI Competitor Scanner", layout="centered")
